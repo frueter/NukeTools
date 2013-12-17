@@ -1,9 +1,11 @@
+import errno
 import filecmp
 import nuke
 import os
 import re
 import shutil
 import threading
+import time
 from PySide import QtCore
 
 # Mimic nuke.localiseFile but make it threaded so it can run in the background
@@ -89,22 +91,39 @@ class LocaliseThreaded(object):
         Copy filePath to destPath. destPath will be created if it doesn't exist.
         filePath will not be copied if the file already exists in destPath unless the local copy has an older time stamp
         '''
+        # CREATE TARGET DIR IF NEED BE
         if not os.path.isdir(destPath):
             os.makedirs(destPath)
-        localFile = os.path.join(destPath, os.path.basename(filePath))
 
-        if not os.path.isfile(localFile):
-            # FILE DOES NOT EXISTS LOCALLY - COPY IT
-            print 'copying new local file'
-            shutil.copy2(filePath, destPath)
-        elif not filecmp.cmp(filePath, localFile):
-            # LOCAL COPY SEEMS OUT OF SYNC - COPY IT AGAIN
-            print 'updating local file'
-            shutil.copy2(filePath, destPath)
-        else:
+        maxTries = 5 # NUMBER OF COPY ATTEMPTS IF STALE NFS HANDLE IS ENCOUNTERED
+        localFile = os.path.join(destPath, os.path.basename(filePath))
+        
+        if os.path.isfile(localFile) and filecmp.cmp(filePath, localFile):
             # LOCAL FILE IS UP-TO-DATE - NOTHING TO DO
             print 'doing nothing'
             pass
+        else:
+            # FILE DOES NOT EXISTS LOCALLY OR
+            # LOCAL COPY SEEMS OUT OF SYNC - COPY IT AGAIN
+            print 'copying file'
+            tryCount = 0
+            while True:           
+                try:
+                    # TRY TO COPY FILE
+                    shutil.copy2(filePath, destPath) # REPLACE WITH BETTER COPY ROUTINE
+                    break
+                except (OSError, IOError) as e:
+                    if e.errno == errno.ESTALE:
+                        # IF STALE NFS HANDLE IS ENCOUNTERED WAIT AND TRY AGAIN
+                        if tryCount >= maxTries:
+                            # TOO MANY UNSUCCESSFUL TRIES - GIVING UP
+                            raise
+                        time.sleep(.5)
+                        tryCount += 1
+                    else:
+                        # SOME UNKNOWN ERROR OCCURRED
+                        raise
+
         
 
     def getTargetDir(self, filePath):
