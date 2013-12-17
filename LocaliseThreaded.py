@@ -109,17 +109,14 @@ class LocaliseThreaded(object):
 
     def getTargetDir(self, filePath):
         '''Get the target directory for filePath based on Nuke's cache preferences and localisation rules'''
-
+        parts = filePath.split('/') # NUKE ALREADY CONVERTS BACK SLASHES TO FORWARD SLASHES ON WINDOWS
         if not filePath.startswith(os.sep):
             # DRIVE LETTER
-            parts = filePath.split('/') # NUKE ALREADY CONVERTS BACK SLASHES TO FORWARD SLASHES ON WINDOWS
             driveLetter = parts[0]
-            root = parts[1]
-            parts = parts [2:] # REMOVE DRIVE LETTER FROM PARTS BECAUSE WE ARE STORING IT IN PREFIX
-            prefix =  driveLetter.replace(':', '_') + '_' + root
+            parts = parts [1:] # REMOVE DRIVE LETTER FROM PARTS BECAUSE WE ARE STORING IT IN PREFIX
+            prefix =  driveLetter.replace(':', '_')
         else:
             # REPLACE EACH LEADING SLASH WITH UNDERSCORE
-            parts = filePath.split('/') # NUKE ALREADY CONVERTS BACK SLASHES TO FORWARD SLASHES ON WINDOWS
             slashCount = len([i for i in parts if not i])
             root = [p for p in parts if p][0]
             parts = parts[slashCount + 1:] # REMOVE SLASHES AND ROOT FROM PARTS BECAUSE WE ARE STORING THOSE IN PREFIX
