@@ -23,7 +23,6 @@ from PySide import QtCore
 
 class LocaliseThreaded(object):
     # TO DO:
-    # -thread manager to be able to set maximum threads and split one node into multiple threads if max is not used
     # -stereo images if file knob is split
 
     def __init__(self, fileDict, maxThreads=1):
@@ -38,7 +37,7 @@ class LocaliseThreaded(object):
         self.progress = 0.0
         self.cachePath = nuke.value('preferences.localCachePath')
         self.finishedThreads = 0
-        self.threadLimit = int(nuke.THREADS / 2.0) # SHOULD MAKE THIS A PREFERENCES
+        self.threadLimit = maxThreads
         self.threadLimiter = threading.BoundedSemaphore(self.threadLimit)
 
 
@@ -129,7 +128,7 @@ class LocaliseThreaded(object):
     def getTargetDir(self, filePath):
         '''Get the target directory for filePath based on Nuke's cache preferences and localisation rules'''
         parts = filePath.split('/') # NUKE ALREADY CONVERTS BACK SLASHES TO FORWARD SLASHES ON WINDOWS
-        if not filePath.startswith(os.sep):
+        if not filePath.startswith('/'):
             # DRIVE LETTER
             driveLetter = parts[0]
             parts = parts [1:] # REMOVE DRIVE LETTER FROM PARTS BECAUSE WE ARE STORING IT IN PREFIX
@@ -185,6 +184,14 @@ def getFrameList(fileKnob, existingFilePaths):
 def localiseFileThreaded(readKnobList):
     '''Wrapper to duck punch default method'''
 
+    p = nuke.Panel('max copy threads')
+    p.addEnumerationPulldown('max threads', ' '.join([str(i+1) for i in xrange(nuke.THREADS)]))
+    if p.show():
+        maxThreads = int(p.value('max threads'))
+    else:
+        return
+
+
     fileDict = {}
     allFilesPaths = []
     for knob in readKnobList:
@@ -194,7 +201,7 @@ def localiseFileThreaded(readKnobList):
         fileDict[knob.node().name()] = filePathList
         allFilesPaths.extend(filePathList)
 
-    localiseThread = LocaliseThreaded(fileDict)
+    localiseThread = LocaliseThreaded(fileDict, maxThreads)
     localiseThread.start()
 
 
