@@ -17,11 +17,10 @@ if nuke.env['WIN32']:
 # This does not implement the preferences' disk cache size knob yet!!!
 #
 #
-# To install duck punch nuke.localiseFiles like this:
-#    import LocaliseThreaded
-#    nuke.localiseFilesHOLD = nuke.localiseFiles #BACKUP ORIGINAL
-#    nuke.localiseFiles = LocaliseThreaded.localiseFileThreaded
-#    doLocalise(True) # ONLY FOR DEBUGGING, THIS IS ACTUALLY CALLED FROM THE DEFAULT MENU
+# To install put this into your menu.py:
+# import LocaliseThreaded
+# LocaliseThreaded.register()
+
 
 
 class LocaliseThreaded(object):
@@ -179,7 +178,7 @@ def fixPadding(path):
 
 def getFrameList(fileKnob, existingFilePaths):
     '''
-    Return a list of frames that are part of the sequence that fileKnob is ponting to.
+    Return a list of frames that are part of the sequence that fileKnob is pointing to.
     If the file path is already in existingFilePaths it will not be included.
     '''
 
@@ -191,7 +190,13 @@ def getFrameList(fileKnob, existingFilePaths):
             return [filePath]
     first = node.firstFrame()
     last = node.lastFrame()
-    return [filePath%i for i in xrange(first, last+1) if filePath%i not in existingFilePaths]
+    frameList = []
+    for frame in xrange(first, last+1):
+        for v in nuke.views():
+            filePath = fileKnob.evaluate(frame, v)
+            if filePath not in existingFilePaths:
+                frameList.append(filePath)
+    return frameList
 
 
 def localiseFileThreaded(readKnobList):
