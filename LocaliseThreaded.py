@@ -11,21 +11,18 @@ if nuke.env['WIN32']:
     # IMPORT WINDLL FOR FAST COPY UNDER WINDOWS
     from ctypes import windll
 
-# Mimic nuke.localiseFile but make it threaded so it can run in the background
-# 
-# WARNING:
-# This does not implement the preferences' disk cache size knob yet!!!
-#
-#
-# To install put this into your menu.py:
-# import LocaliseThreaded
-# LocaliseThreaded.register()
-
-
 
 class LocaliseThreaded(object):
-    # TO DO:
-    # -stereo images if file knob is split
+    '''
+    Mimic nuke.localiseFile but make it threaded so it can run in the background
+    
+    WARNING:
+    This does not implement the preferences' disk cache size knob yet!!!
+   
+    To install put this into your menu.py:
+    import LocaliseThreaded
+    LocaliseThreaded.register()
+    '''
 
     def __init__(self, fileDict, maxThreads=1):
         '''
@@ -160,44 +157,38 @@ class LocaliseThreaded(object):
 
 
 
-def fixPadding(path):
-    '''
-    Convert padding from hashes to C-like padding
-    example:
-       path.####.exr > path.%04d.exr
-       path.######.exr > path.%06d.exr
-    '''
-
-    match = re.search('#+' , path)
-    if not match:
-        return path
-    oldPadding = match.group(0)
-    newPadding = '%%%sd' % str(len(oldPadding)).zfill(2)
-    return re.sub(oldPadding, newPadding, path)
-
-
 def getFrameList(fileKnob, existingFilePaths):
     '''
     Return a list of frames that are part of the sequence that fileKnob is pointing to.
     If the file path is already in existingFilePaths it will not be included.
     '''
-
     node = fileKnob.node()
-    filePath = fixPadding(fileKnob.value())
-    if os.path.isfile(filePath):
-        # STILL FRAME, QUICKTIME, ETC
-        if filePath not in existingFilePaths:
-            return [filePath]
-    first = node.firstFrame()
-    last = node.lastFrame()
+    originalCacheMode = node['cacheLocal'].value()
+    node['cacheLocal'].setValue('never')
+    
+    frameRange = nuke.FrameRange(node.firstFrame(), node.lastFrame(), 1)
+    outputContext = nuke.OutputContext()
+    
     frameList = []
-    for frame in xrange(first, last+1):
-        for v in nuke.views():
-            filePath = fileKnob.evaluate(frame, v)
+    # Cycle over views
+    for viewNumber in xrange(outputContext.viewcount()):
+        viewName = outputContext.viewname(viewNumber)
+        # Skip "default" view
+        if viewName not in nuke.views():
+            continue
+        
+        # Set context to viewNumber
+        outputContext.setView(viewNumber)
+        
+        # Cycle over frame range
+        for frameNumber in frameRange:
+            outputContext.setFrame(frameNumber)
+            filePath = fileKnob.getEvaluatedValue(outputContext)
             if filePath not in existingFilePaths:
                 frameList.append(filePath)
+    
+    node['cacheLocal'].setValue(originalCacheMode)
     return frameList
-
 
 def localiseFileThreaded(readKnobList):
     '''Wrapper to duck punch default method'''
