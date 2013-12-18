@@ -3,10 +3,13 @@ import filecmp
 import nuke
 import os
 import re
-import shutil
 import threading
 import time
-from PySide import QtCore
+from subprocess import call
+
+if nuke.env['WIN32']:
+    # IMPORT WINDLL FOR FAST COPY UNDER WINDOWS
+    from ctypes import windll
 
 # Mimic nuke.localiseFile but make it threaded so it can run in the background
 # 
@@ -19,7 +22,7 @@ from PySide import QtCore
 #    nuke.localiseFilesHOLD = nuke.localiseFiles #BACKUP ORIGINAL
 #    nuke.localiseFiles = LocaliseThreaded.localiseFileThreaded
 #    doLocalise(True) # ONLY FOR DEBUGGING, THIS IS ACTUALLY CALLED FROM THE DEFAULT MENU
-     
+
 
 class LocaliseThreaded(object):
     # TO DO:
@@ -43,6 +46,7 @@ class LocaliseThreaded(object):
 
     def start(self):
         '''start copying files'''
+        self.start = time.time()
         self.mainTask = nuke.ProgressTask('LOCALISING %s files' % self.totalFileCount)
         self.__updateMainTaskMessage()
         for seqName, fileList in self.fileDict.iteritems():
@@ -57,7 +61,6 @@ class LocaliseThreaded(object):
             if task.isCancelled() or self.mainTask.isCancelled():
                 break
             # COPY FILE
-            #print 'copying %s to %s' % (filePath, self.getTargetDir(filePath))
             self.copyFile(filePath, self.getTargetDir(filePath))
             # UPDATE LOCAL TASK
             task.setMessage('localising %s' % filePath)
@@ -71,14 +74,18 @@ class LocaliseThreaded(object):
 
     def reportFinishedThread(self):
         '''Used to update the main task message and invoke the indicator on all nodes after localisation finsishes'''
-        print threading.currentThread().getName(), 'FINISHED'
+
         self.finishedThreads += 1
         self.__updateMainTaskMessage()
         if self.finishedThreads == self.taskCount:
             self.__forceUpdate()
+            self.end = time.time()
+            #print 'localising took %s seconds' % (self.end - self.start)
+
+
 
     def __updateMainTaskMessage(self):
-        self.mainTask.setMessage('%s/%s concurrent tasks' % (self.finishedThreads, self.taskCount))
+        self.mainTask.setMessage('%s/%s tasks' % (self.finishedThreads, self.taskCount))
 
     def __forceUpdate(self):
         '''Silly workaround to update the node indicators. node.update() doesn't do the trick'''
@@ -96,20 +103,18 @@ class LocaliseThreaded(object):
 
         maxTries = 5 # NUMBER OF COPY ATTEMPTS IF STALE NFS HANDLE IS ENCOUNTERED
         localFile = os.path.join(destPath, os.path.basename(filePath))
-        
+
         if os.path.isfile(localFile) and filecmp.cmp(filePath, localFile):
             # LOCAL FILE IS UP-TO-DATE - NOTHING TO DO
-            print 'doing nothing'
             pass
         else:
             # FILE DOES NOT EXISTS LOCALLY OR
             # LOCAL COPY SEEMS OUT OF SYNC - COPY IT AGAIN
-            print 'copying file'
             tryCount = 0
             while True:           
                 try:
                     # TRY TO COPY FILE
-                    shutil.copy2(filePath, destPath) # REPLACE WITH BETTER COPY ROUTINE
+                    self.fastCopy(filePath, destPath)
                     break
                 except (OSError, IOError) as e:
                     if e.errno == errno.ESTALE:
@@ -123,7 +128,15 @@ class LocaliseThreaded(object):
                         # SOME UNKNOWN ERROR OCCURRED
                         raise
 
-        
+
+    def fastCopy(self, filePath, destPath):
+        '''use a fast copy functuion based on OS'''
+        if nuke.env['WIN32']:
+            # COPY UNDER WINDOWS SYSTEM
+            windll.kernel32.CopyFileA(filePath, destPath, False)
+        else:
+            # COPY UNDER*NIX SYSTEM
+            call(['cp', '-p', filePath, destPath])
 
     def getTargetDir(self, filePath):
         '''Get the target directory for filePath based on Nuke's cache preferences and localisation rules'''
@@ -155,7 +168,7 @@ def fixPadding(path):
        path.####.exr > path.%04d.exr
        path.######.exr > path.%06d.exr
     '''
-    
+
     match = re.search('#+' , path)
     if not match:
         return path
@@ -179,18 +192,18 @@ def getFrameList(fileKnob, existingFilePaths):
     first = node.firstFrame()
     last = node.lastFrame()
     return [filePath%i for i in xrange(first, last+1) if filePath%i not in existingFilePaths]
-    
+
 
 def localiseFileThreaded(readKnobList):
     '''Wrapper to duck punch default method'''
 
-    p = nuke.Panel('max copy threads')
-    p.addEnumerationPulldown('max threads', ' '.join([str(i+1) for i in xrange(nuke.THREADS)]))
+    p = nuke.Panel('Localiser (threaded)')
+    knobName = 'concurrent copy tasks'
+    p.addEnumerationPulldown(knobName, ' '.join([str(i+1) for i in xrange(min(nuke.THREADS, 4))]))
     if p.show():
-        maxThreads = int(p.value('max threads'))
+        maxThreads = int(p.value(knobName))
     else:
         return
-
 
     fileDict = {}
     allFilesPaths = []
@@ -206,14 +219,7 @@ def localiseFileThreaded(readKnobList):
 
 
 def register():
+    
     nuke.localiseFilesHOLD = nuke.localiseFiles #BACKUP ORIGINAL
     nuke.localiseFiles = localiseFileThreaded
-    #doLocalise(True) # ONLY FOR DEBUGGING, THIS IS ACTUALLY CALLED FROM THE DEFAULT MENU
-
-if __name__ == '__main__':
-    pass
-
-    
-    
-
 
