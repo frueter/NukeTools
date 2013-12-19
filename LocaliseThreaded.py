@@ -2,7 +2,6 @@ import errno
 import filecmp
 import nuke
 import os
-import re
 import threading
 import time
 from subprocess import call
