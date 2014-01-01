@@ -4,20 +4,29 @@ import nuke
 import os
 import threading
 import time
+import shutil
 from subprocess import call
 
+
 if nuke.env['WIN32']:
-    # IMPORT WINDLL FOR FAST COPY UNDER WINDOWS
-    from ctypes import windll
+    # IMPORT WINDLL FOR FAST COPY UNDER WINDOWS (if available)
+    windllAvailable = False
+    try:
+        from ctypes import windll
+        windllAvailable = True
+    except:
+        pass
+
+    # IMPORT SHUTIL IF WINDLL IS NOT AVAILABLE
+    if not windllAvailable:
+        import shutil
+
 
 
 class LocaliseThreaded(object):
     '''
     Mimic nuke.localiseFile but make it threaded so it can run in the background
-    
-    WARNING:
-    This does not implement the preferences' disk cache size knob yet!!!
-   
+
     To install put this into your menu.py:
     import LocaliseThreaded
     LocaliseThreaded.register()
@@ -109,7 +118,8 @@ class LocaliseThreaded(object):
             while True:           
                 try:
                     # TRY TO COPY FILE
-                    self.fastCopy(filePath, destPath)
+                    #self.fastCopy(filePath, destPath)
+                    self.fastCopy(filePath, localFile)
                     break
                 except (OSError, IOError) as e:
                     if e.errno == errno.ESTALE:
@@ -124,14 +134,13 @@ class LocaliseThreaded(object):
                         raise
 
 
-    def fastCopy(self, filePath, destPath):
-        '''use a fast copy functuion based on OS'''
-        if nuke.env['WIN32']:
-            # COPY UNDER WINDOWS SYSTEM
-            windll.kernel32.CopyFileA(filePath, destPath, False)
-        else:
-            # COPY UNDER*NIX SYSTEM
-            call(['cp', '-p', filePath, destPath])
+    def fastCopy(self, srcPath, destPath):
+        '''use a fast copy function based on OS'''
+        
+        ## COPY WITH INCREASED BUFFER SIZE
+        with open(srcPath, 'rb') as srcFile:
+            with open(destPath, 'wb') as destFile:
+                shutil.copyfileobj(srcFile, destFile, 128*1024)
 
     def getTargetDir(self, filePath):
         '''Get the target directory for filePath based on Nuke's cache preferences and localisation rules'''
@@ -164,10 +173,10 @@ def getFrameList(fileKnob, existingFilePaths):
     node = fileKnob.node()
     originalCacheMode = node['cacheLocal'].value()
     node['cacheLocal'].setValue('never')
-    
+
     frameRange = nuke.FrameRange(node.firstFrame(), node.lastFrame(), 1)
     outputContext = nuke.OutputContext()
-    
+
     frameList = []
     # Cycle over views
     for viewNumber in xrange(outputContext.viewcount()):
@@ -175,17 +184,17 @@ def getFrameList(fileKnob, existingFilePaths):
         # Skip "default" view
         if viewName not in nuke.views():
             continue
-        
+
         # Set context to viewNumber
         outputContext.setView(viewNumber)
-        
+
         # Cycle over frame range
         for frameNumber in frameRange:
             outputContext.setFrame(frameNumber)
             filePath = fileKnob.getEvaluatedValue(outputContext)
             if filePath not in existingFilePaths:
                 frameList.append(filePath)
-    
+
     node['cacheLocal'].setValue(originalCacheMode)
     return frameList
 
@@ -214,7 +223,6 @@ def localiseFileThreaded(readKnobList):
 
 
 def register():
-    
+
     nuke.localiseFilesHOLD = nuke.localiseFiles #BACKUP ORIGINAL
     nuke.localiseFiles = localiseFileThreaded
-
