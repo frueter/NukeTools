@@ -50,6 +50,7 @@ class LocaliseThreaded(object):
 
     def start(self):
         '''start copying files'''
+        print 'thread limit is:', self.threadLimit
         self.start = time.time()
         self.mainTask = nuke.ProgressTask('LOCALISING %s files' % self.totalFileCount)
         self.__updateMainTaskMessage()
@@ -102,8 +103,12 @@ class LocaliseThreaded(object):
         filePath will not be copied if the file already exists in destPath unless the local copy has an older time stamp
         '''
         # CREATE TARGET DIR IF NEED BE
-        if not os.path.isdir(destPath):
-            os.makedirs(destPath)
+        try:
+            if not os.path.isdir(destPath):
+                os.makedirs(destPath)
+        except WindowsError:
+            # NOT SURE WHY WINDOWS SOMETIMES SPEWS HERE
+            pass
 
         maxTries = 5 # NUMBER OF COPY ATTEMPTS IF STALE NFS HANDLE IS ENCOUNTERED
         localFile = os.path.join(destPath, os.path.basename(filePath))
@@ -201,13 +206,17 @@ def getFrameList(fileKnob, existingFilePaths):
 def localiseFileThreaded(readKnobList):
     '''Wrapper to duck punch default method'''
 
-    p = nuke.Panel('Localiser (threaded)')
-    knobName = 'concurrent copy tasks'
-    p.addEnumerationPulldown(knobName, ' '.join([str(i+1) for i in xrange(min(nuke.THREADS, 4))]))
-    if p.show():
-        maxThreads = int(p.value(knobName))
+    sequenceCount = len(readKnobList)
+    if sequenceCount > 1:
+        p = nuke.Panel('Localiser (threaded)')
+        knobName = 'concurrent copy tasks'
+        p.addEnumerationPulldown(knobName, ' '.join([str(i+1) for i in xrange(min(nuke.THREADS, sequenceCount, 4))]))
+        if p.show():
+            maxThreads = int(p.value(knobName))
+        else:
+            return
     else:
-        return
+        maxThreads = 1
 
     fileDict = {}
     allFilesPaths = []
@@ -217,7 +226,7 @@ def localiseFileThreaded(readKnobList):
         filePathList = getFrameList(knob, allFilesPaths)
         fileDict[knob.node().name()] = filePathList
         allFilesPaths.extend(filePathList)
-
+    print 'max threads from panel:', maxThreads
     localiseThread = LocaliseThreaded(fileDict, maxThreads)
     localiseThread.start()
 
