@@ -140,7 +140,7 @@ class LocaliseThreaded(object):
         ## COPY WITH INCREASED BUFFER SIZE
         with open(srcPath, 'rb') as srcFile:
             with open(destPath, 'wb') as destFile:
-                shutil.copyfileobj(srcFile, destFile, 128*1024)
+                shutil.copyfileobj(srcFile, destFile, 10 * 1024 * 1024)
 
     def getTargetDir(self, filePath):
         '''Get the target directory for filePath based on Nuke's cache preferences and localisation rules'''
