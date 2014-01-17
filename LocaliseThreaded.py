@@ -2,10 +2,15 @@ import errno
 import filecmp
 import nuke
 import os
+import re
 import threading
 import time
 import shutil
 from subprocess import call
+
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
 
 
 if nuke.env['WIN32']:
@@ -50,7 +55,7 @@ class LocaliseThreaded(object):
 
     def start(self):
         '''start copying files'''
-        print 'thread limit is:', self.threadLimit
+        logger.debug('thread limit is: %s' % self.threadLimit)
         self.start = time.time()
         self.mainTask = nuke.ProgressTask('LOCALISING %s files' % self.totalFileCount)
         self.__updateMainTaskMessage()
@@ -85,8 +90,7 @@ class LocaliseThreaded(object):
         if self.finishedThreads == self.taskCount:
             self.__forceUpdate()
             self.end = time.time()
-            #print 'localising took %s seconds' % (self.end - self.start)
-
+            logger.debug('localising took %s seconds' % (self.end - self.start))
 
 
     def __updateMainTaskMessage(self):
@@ -103,12 +107,17 @@ class LocaliseThreaded(object):
         filePath will not be copied if the file already exists in destPath unless the local copy has an older time stamp
         '''
         # CREATE TARGET DIR IF NEED BE
+        logger.debug('copying %s to %s' % (filePath, destPath))
         try:
             if not os.path.isdir(destPath):
                 os.makedirs(destPath)
         except WindowsError:
             # NOT SURE WHY WINDOWS SOMETIMES SPEWS HERE
             pass
+        # SKIP MISSING FRAMES
+        if not os.path.isfile(filePath):
+            logger('skipping missing frame %s' % filePath)
+            return
 
         maxTries = 5 # NUMBER OF COPY ATTEMPTS IF STALE NFS HANDLE IS ENCOUNTERED
         localFile = os.path.join(destPath, os.path.basename(filePath))
@@ -149,19 +158,26 @@ class LocaliseThreaded(object):
 
     def getTargetDir(self, filePath):
         '''Get the target directory for filePath based on Nuke's cache preferences and localisation rules'''
+        logger.debug('getting target directory')
         parts = filePath.split('/') # NUKE ALREADY CONVERTS BACK SLASHES TO FORWARD SLASHES ON WINDOWS
+        logger.debug(filePath)
+        logger.debug(parts)
         if not filePath.startswith('/'):
+            logger.debug('localising with drive letter')
             # DRIVE LETTER
             driveLetter = parts[0]
             parts = parts [1:] # REMOVE DRIVE LETTER FROM PARTS BECAUSE WE ARE STORING IT IN PREFIX
             prefix =  driveLetter.replace(':', '_')
         else:
             # REPLACE EACH LEADING SLASH WITH UNDERSCORE
-            slashCount = len([i for i in parts if not i])
+            logger.debug('localising without drive letter')
+            # GET LEADING SLASHES
+            slashCountRE = re.match('/+', filePath)
+            slashCount = slashCountRE.span()[1]
+            #slashCount = len([i for i in parts if not i])
             root = [p for p in parts if p][0]
             parts = parts[slashCount + 1:] # REMOVE SLASHES AND ROOT FROM PARTS BECAUSE WE ARE STORING THOSE IN PREFIX
             prefix = '_' * slashCount + root
-
         # RE-ASSEMBLE TO LOCALISED PATH
         parts.insert(0, prefix)
         parts = self.cachePath.split('/') + parts
@@ -226,7 +242,7 @@ def localiseFileThreaded(readKnobList):
         filePathList = getFrameList(knob, allFilesPaths)
         fileDict[knob.node().name()] = filePathList
         allFilesPaths.extend(filePathList)
-    print 'max threads from panel:', maxThreads
+    logger.debug('max threads from panel: %s' % maxThreads)
     localiseThread = LocaliseThreaded(fileDict, maxThreads)
     localiseThread.start()
 
