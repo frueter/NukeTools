@@ -116,7 +116,7 @@ class LocaliseThreaded(object):
             pass
         # SKIP MISSING FRAMES
         if not os.path.isfile(filePath):
-            logger('skipping missing frame %s' % filePath)
+            logger.info('skipping missing frame %s' % filePath)
             return
 
         maxTries = 5 # NUMBER OF COPY ATTEMPTS IF STALE NFS HANDLE IS ENCOUNTERED
