@@ -195,7 +195,9 @@ def getFrameList(fileKnob, existingFilePaths):
     originalCacheMode = node['cacheLocal'].value()
     node['cacheLocal'].setValue('never')
 
-    frameRange = nuke.FrameRange(node.firstFrame(), node.lastFrame(), 1)
+    #frameRange = nuke.FrameRange(node.firstFrame(), node.lastFrame(), 1)
+    frameRange = nuke.FrameRange(node['first'].value(), node['last'].value(), 1)
+    print 'frame range: {0}-{1}'.format(frameRange.first(), frameRange.last())
     outputContext = nuke.OutputContext()
 
     frameList = []
@@ -237,8 +239,6 @@ def localiseFileThreaded(readKnobList):
     fileDict = {}
     allFilesPaths = []
     for knob in readKnobList:
-        first = knob.node().firstFrame()
-        last = knob.node().lastFrame()
         filePathList = getFrameList(knob, allFilesPaths)
         fileDict[knob.node().name()] = filePathList
         allFilesPaths.extend(filePathList)
@@ -248,6 +248,5 @@ def localiseFileThreaded(readKnobList):
 
 
 def register():
-
     nuke.localiseFilesHOLD = nuke.localiseFiles #BACKUP ORIGINAL
     nuke.localiseFiles = localiseFileThreaded
